@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Code Mon's Musical Instruments</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            background-color: #f4f4f4;
+            color: #333;
+        }
+        header {
+            background-color: #333;
+            color: #fff;
+            padding: 20px 0;
+            text-align: center;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+        }
+        header h1 {
+            margin: 0;
+            font-size: 2.5em;
+        }
+        header p {
+            margin: 5px 0 0;
+            font-size: 1.1em;
+        }
+        .product-container {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            padding: 20px;
+            gap: 25px;
+            max-width: 1200px;
+            margin: 20px auto;
+        }
+        .product-card {
+            background-color: #fff;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+            padding: 20px;
+            text-align: center;
+            width: 280px;
+            transition: transform 0.2s ease-in-out;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+        .product-card:hover {
+            transform: translateY(-5px);
+        }
+        .product-card img {
+            max-width: 100%;
+            height: 200px;
+            object-fit: contain;
+            margin-bottom: 15px;
+            border-radius: 4px;
+        }
+        .product-card h2 {
+            font-size: 1.5em;
+            margin: 10px 0;
+            color: #007bff;
+        }
+        .product-card p {
+            font-size: 1.2em;
+            color: #555;
+            margin-bottom: 15px;
+            font-weight: bold;
+        }
+        .product-card button {
+            background-color: #28a745;
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 1em;
+            transition: background-color 0.2s ease;
+            margin-top: auto;
+        }
+        .product-card button:hover {
+            background-color: #218838;
+        }
+        footer {
+            text-align: center;
+            padding: 20px;
+            background-color: #333;
+            color: #fff;
+            margin-top: 40px;
+            box-shadow: 0 -2px 5px rgba(0,0,0,0.2);
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Code Mon's Musical Instruments</h1>
+        <p>Your one-stop shop for quality instruments</p>
+    </header>
+
+    <div class="product-container">
+        <div class="product-card">
+            <img src="https://via.placeholder.com/280x200?text=Acoustic+Guitar" alt="Acoustic Guitar">
+            <h2>Acoustic Guitar</h2>
+            <p>$299.99</p>
+            <button onclick="addToCart('Acoustic Guitar', 299.99)">Add to Cart</button>
+        </div>
+
+        <div class="product-card">
+            <img src="https://via.placeholder.com/280x200?text=Digital+Piano" alt="Digital Piano">
+            <h2>Digital Piano</h2>
+            <p>$799.00</p>
+            <button onclick="addToCart('Digital Piano', 799.00)">Add to Cart</button>
+        </div>
+
+        <div class="product-card">
+            <img src="https://via.placeholder.com/280x200?text=Drum+Kit" alt="Drum Kit">
+            <h2>Drum Kit</h2>
+            <p>$549.50</p>
+            <button onclick="addToCart('Drum Kit', 549.50)">Add to Cart</button>
+        </div>
+
+        <div class="product-card">
+            <img src="https://via.placeholder.com/280x200?text=Violin" alt="Violin">
+            <h2>Violin</h2>
+            <p>$189.95</p>
+            <button onclick="addToCart('Violin', 189.95)">Add to Cart</button>
+        </div>
+
+        <div class="product-card">
+            <img src="https://via.placeholder.com/280x200?text=Electric+Bass" alt="Electric Bass">
+            <h2>Electric Bass</h2>
+            <p>$399.00</p>
+            <button onclick="addToCart('Electric Bass', 399.00)">Add to Cart</button>
+        </div>
+
+        <div class="product-card">
+            <img src="https://via.placeholder.com/280x200?text=Flute" alt="Flute">
+            <h2>Flute</h2>
+            <p>$150.00</p>
+            <button onclick="addToCart('Flute', 150.00)">Add to Cart</button>
+        </div>
+
+        <div class="product-card">
+            <img src="https://via.placeholder.com/280x200?text=Trumpet" alt="Trumpet">
+            <h2>Trumpet</h2>
+            <p>$250.00</p>
+            <button onclick="addToCart('Trumpet', 250.00)">Add to Cart</button>
+        </div>
+
+        <div class="product-card">
+            <img src="https://via.placeholder.com/280x200?text=Ukulele" alt="Ukulele">
+            <h2>Ukulele</h2>
+            <p>$75.00</p>
+            <button onclick="addToCart('Ukulele', 75.00)">Add to Cart</button>
+        </div>
+    </div>
+
+    <footer>
+        <p>&copy; 2023 Code Mon's Musical Instruments. All rights reserved.</p>
+    </footer>
+
+    <script>
+        function addToCart(productName, price) {
+            alert('Added ' + productName + ' to cart for $' + price.toFixed(2) + '!');
+        }
+    </script>
+</body>
+</html>
