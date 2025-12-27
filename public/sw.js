@@ -1,7 +1,7 @@
 const CACHE_NAME = "v2";
 const urlsToCache = [
   "./",
-  "./index.html",
+  "./test.html",
   "./manifest.json",
   "./C69P2W_newllo.png",
   "./C69P2W_newllo.png"
