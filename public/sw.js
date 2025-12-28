@@ -1,9 +1,13 @@
 const CACHE_NAME = "v2";
+
+// Get app name from query string
+const urlParams = new URL(location).searchParams;
+const appName = urlParams.get('name') || 'defaultApp';
+
 const urlsToCache = [
   "./",
   "./@me",
-  "./manifest.json",
-  "./C69P2W_newllo.png",
+  `https://code-mon-space.workers.dev/api/engine?name=${encodeURIComponent(appName)}`,
   "./C69P2W_newllo.png"
 ];
 
@@ -20,7 +24,7 @@ self.addEventListener("install", (event) => {
 self.addEventListener("activate", (event) => {
   console.log("Service Worker: Activated");
   event.waitUntil(
-    caches.keys().then(keys => 
+    caches.keys().then(keys =>
       Promise.all(keys.map(key => {
         if (key !== CACHE_NAME) return caches.delete(key);
       }))
