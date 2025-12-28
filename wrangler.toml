@@ -2,5 +2,5 @@ name = "code-mon-space"
 main = "worker.js" # or src/index.js
 compatibility_date = "2025-12-28"
 [[kv_namespaces]]
-binding = "USERS_KV"
+binding = "APP"
 id = "16cae66906a24d1f8862fad185187cd9"
