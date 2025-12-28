@@ -33,7 +33,7 @@
     if (!appName) {
       appContainer.innerHTML = "<h2>No app name provided!</h2>";
     } else {
-      const manifestUrl = `https://code-mon-space.workers.dev/api/engine?name=${encodeURIComponent(appName)}`;
+      const manifestUrl = `https://code-mon-space.codemon.workers.dev/api/engine?name=${encodeURIComponent(appName)}`;
       
       // Set manifest for PWA install
       const manifestLink = document.getElementById("manifestLink");
