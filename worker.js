@@ -17,10 +17,9 @@ export default {
       });
     }
 
-    // Proxy endpoint
     if (path === "/api/engine") {
 
-      // ---------- FORWARD GET ----------
+      // ---------- GET ----------
       if (req.method === "GET") {
         const name = url.searchParams.get("name");
 
@@ -31,13 +30,17 @@ export default {
           });
         }
 
-        const apiRes = await fetch(
-          `https://code-mon.workers.dev/api/app?name=${encodeURIComponent(name)}`,
-          { method: "GET" }
-        );
+        const manifest = await env.APP.get(name);
 
-        return new Response(await apiRes.text(), {
-          status: apiRes.status,
+        if (!manifest) {
+          return new Response("Not Found", {
+            status: 404,
+            headers: corsHeaders
+          });
+        }
+
+        return new Response(manifest, {
+          status: 200,
           headers: {
             ...corsHeaders,
             "Content-Type": "application/manifest+json"
@@ -45,7 +48,7 @@ export default {
         });
       }
 
-      // ---------- FORWARD POST ----------
+      // ---------- POST ----------
       if (req.method === "POST") {
         let body;
 
@@ -58,28 +61,30 @@ export default {
           });
         }
 
-        const { user, pass, name, manifest } = body;
+        const { name, manifest } = body;
 
-        if (!user || !pass || !name || !manifest) {
+        if (!name || !manifest) {
           return new Response("Missing fields", {
             status: 400,
             headers: corsHeaders
           });
         }
 
-        const apiRes = await fetch(
-          "https://code-mon.workers.dev/api/app",
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json"
-            },
-            body: JSON.stringify({ user, pass, name, manifest })
-          }
-        );
+        // Check if key already exists
+        const existing = await env.APP.get(name);
 
-        return new Response(await apiRes.text(), {
-          status: apiRes.status,
+        if (existing) {
+          return new Response("App already exists", {
+            status: 409,
+            headers: corsHeaders
+          });
+        }
+
+        // Save manifest
+        await env.APP.put(name, JSON.stringify(manifest));
+
+        return new Response(JSON.stringify({ success: true }), {
+          status: 201,
           headers: {
             ...corsHeaders,
             "Content-Type": "application/json"
