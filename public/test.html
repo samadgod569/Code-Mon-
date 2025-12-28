@@ -4,46 +4,82 @@
   <meta charset="utf-8">
   <title>PWA</title>
   <link id="manifestLink" rel="manifest" href="">
-  <link rel="stylesheet" href="style.css">
   <style>
+    body { font-family: sans-serif; margin: 0; padding: 0; }
     button#installBtn {
-      position: fixed;
-      bottom: 20px;
-      left: 50%;
-      transform: translateX(-50%);
-      padding: 10px 20px;
-      font-size: 16px;
-      display: none;
-      z-index: 1000;
+      position: fixed; bottom: 20px; left: 50%;
+      transform: translateX(-50%); padding: 10px 20px;
+      font-size: 16px; display: none; z-index: 1000;
     }
+    #app { padding: 20px; }
   </style>
 </head>
 <body>
-  <h1>Hello PWA</h1>
+  <div id="app"><h1>Loading app...</h1></div>
   <button id="installBtn">Install App</button>
 
-  <script src="script.js"></script>
   <script>
   const urlParams = new URLSearchParams(window.location.search);
   const appName = urlParams.get('name');
 
   if (!appName) {
-    document.body.innerHTML = "<h2>No app name provided!</h2>";
+    document.getElementById('app').innerHTML = "<h2>No app name provided!</h2>";
   } else {
-    // Dynamically set manifest
-    const manifestLink = document.createElement("link");
-    manifestLink.rel = "manifest";
-    manifestLink.href = `https://code-mon-space.workers.dev/api/engine?name=${encodeURIComponent(appName)}`;
-    document.head.appendChild(manifestLink);
+    const manifestUrl = `https://code-mon-space.workers.dev/api/engine?name=${encodeURIComponent(appName)}`;
 
-    console.log("Manifest URL set:", manifestLink.href);
+    // Set manifest for PWA install
+    const manifestLink = document.getElementById("manifestLink");
+    manifestLink.href = manifestUrl;
 
-    // Optionally fetch manifest to read icons, etc.
-    fetch(manifestLink.href)
+    // Fetch manifest JSON
+    fetch(manifestUrl)
       .then(res => res.json())
-      .then(data => console.log("Manifest loaded:", data))
-      .catch(err => console.log("Manifest fetch error:", err));
+      .then(manifest => {
+        console.log("Manifest loaded:", manifest);
+
+        // Fetch user HTML from start_url
+        fetch(manifest.start_url)
+          .then(res => res.text())
+          .then(html => {
+            document.getElementById('app').innerHTML = html;
+
+            // Optional: dynamically load CSS/JS if needed
+            if (manifest.start_url.includes('.css')) {
+              const link = document.createElement('link');
+              link.rel = 'stylesheet';
+              link.href = manifest.start_url;
+              document.head.appendChild(link);
+            }
+          });
+      })
+      .catch(err => {
+        console.error("Error loading manifest:", err);
+        document.getElementById('app').innerHTML = "<h2>Failed to load app.</h2>";
+      });
   }
+
+  // Register service worker
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('sw.js')
+      .then(() => console.log("Service Worker registered"))
+      .catch(err => console.log("SW error:", err));
+  }
+
+  // Install button
+  let deferredPrompt;
+  const installBtn = document.getElementById("installBtn");
+  window.addEventListener('beforeinstallprompt', e => {
+    e.preventDefault();
+    deferredPrompt = e;
+    installBtn.style.display = 'block';
+  });
+  installBtn.addEventListener('click', async () => {
+    installBtn.style.display = 'none';
+    deferredPrompt.prompt();
+    const choice = await deferredPrompt.userChoice;
+    console.log("User choice:", choice.outcome);
+    deferredPrompt = null;
+  });
   </script>
 </body>
 </html>
