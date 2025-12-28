@@ -1,86 +1,56 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>PWA</title>
-  <link id="manifestLink" rel="manifest" href="manifest.json">
-  <link rel="stylesheet" href="style.css">
+  <title>Test PWA</title>
+
+  <!-- REQUIRED -->
+  <link rel="manifest" href="/manifest.json">
+
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#000000">
+
   <style>
-    body { font-family: sans-serif; margin: 0; padding: 0; }
-    #app { padding: 20px; }
-    button#installBtn {
-      position: fixed;
-      bottom: 20px;
-      left: 50%;
-      transform: translateX(-50%);
-      padding: 10px 20px;
-      font-size: 16px;
+    body {
+      font-family: sans-serif;
+      text-align: center;
+      padding-top: 50px;
+    }
+    #installBtn {
       display: none;
-      z-index: 1000;
+      padding: 12px 24px;
+      font-size: 16px;
     }
   </style>
 </head>
 <body>
-  <div id="app">Loading app...</div>
+
+  <h1>Test PWA</h1>
+  <p>This is a basic PWA test</p>
   <button id="installBtn">Install App</button>
 
   <script>
-    const urlParams = new URLSearchParams(window.location.search);
-    const appName = urlParams.get('name');
-
-    const appContainer = document.getElementById('app');
-
-    if (!appName) {
-      appContainer.innerHTML = "<h2>No app name provided!</h2>";
-    } else {
-      const manifestUrl = `https://code-mon-space.codemon.workers.dev/api/engine?name=${encodeURIComponent(appName)}`;
-      
-      // Set manifest for PWA install
-      const manifestLink = document.getElementById("manifestLink");
-      manifestLink.href = manifestUrl;
-
-      // Fetch manifest JSON
-      fetch(manifestUrl)
-        .then(res => res.json())
-        .then(manifest => {
-          // Fetch and load user HTML from start_url
-          fetch(manifest.start_url)
-            .then(res => res.text())
-            .then(html => {
-              appContainer.innerHTML = html;
-
-              // Optionally load CSS/JS if specified in manifest.start_url
-              // (e.g., for dynamically generated URLs)
-              // You can extend here if needed
-            })
-            .catch(() => {
-              appContainer.innerHTML = "<h2>Failed to load app content.</h2>";
-            });
-        })
-        .catch(() => {
-          appContainer.innerHTML = "<h2>Failed to load app manifest.</h2>";
-        });
+    // Register Service Worker
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("/sw.js");
     }
 
-    // Register service worker
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('sw.js');
-    }
-
-    // Handle PWA install button
+    // Install button logic
     let deferredPrompt;
     const installBtn = document.getElementById("installBtn");
-    window.addEventListener('beforeinstallprompt', e => {
+
+    window.addEventListener("beforeinstallprompt", e => {
       e.preventDefault();
       deferredPrompt = e;
-      installBtn.style.display = 'block';
+      installBtn.style.display = "inline-block";
     });
-    installBtn.addEventListener('click', async () => {
-      installBtn.style.display = 'none';
-      deferredPrompt.prompt();
-      await deferredPrompt.userChoice;
+
+    installBtn.addEventListener("click", async () => {
+      installBtn.style.display = "none";
+      await deferredPrompt.prompt();
       deferredPrompt = null;
     });
   </script>
+
 </body>
 </html>
