@@ -139,7 +139,6 @@ if (req.method === "POST") {
   }
 
   let body;
-
   try {
     body = await req.json();
   } catch {
@@ -176,39 +175,45 @@ if (req.method === "POST") {
     });
   }
 
-  // 🧩 Split app data
-  let [owner, manifest, description, likes] = appValue.split("*");
+  // 🧩 SAFE split (VERY IMPORTANT)
+  const parts = appValue.split("*");
 
-  // Normalize likes
-  if (!likes || likes.trim() === "") {
-    // No likes yet
-    likes = `${username}[*]`;
-  } else {
-    // Split and clean (handles trailing empty index)
-    const likedUsers = likes
+  const owner = parts[0];
+  const manifest = parts[1];
+  const description = parts[2];
+  let likes = parts.slice(3).join("*"); // 🛡️ protect against corruption
+
+  // 🧹 Normalize likes
+  let likedUsers = [];
+
+  if (likes && likes.trim() !== "") {
+    likedUsers = likes
       .split("[*]")
       .filter(u => u && u.trim() !== "");
-
-    // Already liked?
-    if (likedUsers.includes(username)) {
-      return new Response("Already liked", {
-        status: 409,
-        headers: corsHeaders
-      });
-    }
-
-    // Add new like
-    likedUsers.push(username);
-    likes = likedUsers.map(u => `${u}[*]`).join("");
   }
 
-  // 🔁 Rebuild value
+  // 🚫 Already liked?
+  if (likedUsers.includes(username)) {
+    return new Response("Already liked", {
+      status: 409,
+      headers: corsHeaders
+    });
+  }
+
+  // ➕ Add like
+  likedUsers.push(username);
+
+  // 🔁 Rebuild likes string safely
+  likes = likedUsers.map(u => `${u}[*]`).join("");
+
+  // 🔁 Rebuild KV value
   const updatedValue = `${owner}*${manifest}*${description}*${likes}`;
 
   await env.APP.put(name, updatedValue);
 
   return new Response(JSON.stringify({
     success: true,
+    totalLikes: likedUsers.length,
     likes
   }), {
     status: 200,
