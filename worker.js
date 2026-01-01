@@ -84,34 +84,36 @@ if (req.method === "POST") {
 
   // 🔹 If key exists → check ownership
   if (existing) {
-    const [owner, storedManifest, description , like] = existing.split("*");
+  const [owner, storedManifest, description, ...likesArr] = existing.split("*");
 
-    if (owner !== username) {
-      return new Response("Forbidden: Not owner", {
-        status: 403,
-        headers: corsHeaders
-      });
-    }
+  const likes = likesArr.join("*"); // preserves original likes exactly
 
-    // Owner matches → update manifest
-    await env.APP.put(
-      name,
-      `${owner}*${JSON.stringify(manifest)}`
-    );
-
-    return new Response(JSON.stringify({ success: true, updated: true }), {
-      status: 200,
-      headers: {
-        ...corsHeaders,
-        "Content-Type": "application/json"
-      }
+  if (owner !== username) {
+    return new Response("Forbidden: Not owner", {
+      status: 403,
+      headers: corsHeaders
     });
+  }
+
+  // Owner matches → update manifest, keep description & likes exactly
+  await env.APP.put(
+    owner,
+    `${owner}*${JSON.stringify(manifest)}*${description || ""}*${likes}`
+  );
+
+  return new Response(JSON.stringify({ success: true, updated: true }), {
+    status: 200,
+    headers: {
+      ...corsHeaders,
+      "Content-Type": "application/json"
+    }
+  });
   }
 
   // 🔹 If key does NOT exist → create new
   await env.APP.put(
-    name,
-    `${username}*${JSON.stringify(manifest)}`
+    username,
+    `${username}*${JSON.stringify(manifest)}*${name}`
   );
 
   return new Response(JSON.stringify({ success: true, created: true }), {
@@ -148,7 +150,7 @@ if (req.method === "POST") {
     });
   }
 
-  const { username, pass, name } = body;
+  const { username, pass } = body;
 
   if (!username || !pass || !name) {
     return new Response("Missing fields", {
@@ -167,7 +169,7 @@ if (req.method === "POST") {
   }
 
   // 🔍 Get app
-  const appValue = await env.APP.get(name);
+  const appValue = await env.APP.get(username);
   if (!appValue) {
     return new Response("App Not Found", {
       status: 404,
@@ -209,7 +211,7 @@ if (req.method === "POST") {
   // 🔁 Rebuild KV value
   const updatedValue = `${owner}*${manifest}*${description}*${likes}`;
 
-  await env.APP.put(name, updatedValue);
+  await env.APP.put(username, updatedValue);
 
   return new Response(JSON.stringify({
     success: true,
