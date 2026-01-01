@@ -30,7 +30,7 @@ export default {
           });
         }
 
-        const manifest = await env.APP.get(username);
+        const manifest = await env.APP.get(name);
 
         if (!manifest) {
           return new Response("Not Found", {
