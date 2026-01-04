@@ -1,6 +1,6 @@
 {
-  "name": "CODE-MON",
-  "short_name": "CODE-MON",
+  "name": "Weather",
+  "short_name": "Weather",
   "start_url": "styles.css",
   "display": "standalone",
   "background_color": "#000000",
