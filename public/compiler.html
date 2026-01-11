@@ -1060,19 +1060,40 @@ for i in range(10):
         // Smart language detection from code content
         
 function detectLanguageFromCode(code) {
-    const c = code.toLowerCase();
+    const c = code.toLowerCase().trim();
 
-    if (c.includes("import foundation") || c.includes("print(") && c.includes("let ")) return "swift";
-    if (c.includes("fn ") && c.includes("let ")) return "rust";
-    if (c.includes("package main") && c.includes("func ")) return "go";
+    // Swift
+    if (c.includes("import foundation") || c.includes("let ") && c.includes("print(")) return "swift";
+
+    // Rust
+    if (c.includes("fn main") || c.includes("println!")) return "rust";
+
+    // Go
+    if (c.includes("package main") && c.includes("func main")) return "go";
+
+    // Java
     if (c.includes("public class") && c.includes("static void main")) return "java";
+
+    // C++
     if (c.includes("#include") && c.includes("cout")) return "cpp";
+
+    // C
     if (c.includes("#include") && c.includes("printf")) return "c";
-    if (c.includes("console.log") || c.includes("function")) return "javascript";
+
+    // Kotlin
+    if (c.includes("fun main") || c.includes("println(") && c.includes("fun ")) return "kotlin";
+
+    // PHP
     if (c.includes("<?php")) return "php";
-    if (c.includes("def ") && c.includes("end")) return "ruby";
-    if (c.includes("print(") && c.includes("def ")) return "python";
-    if (c.includes("fun ") && c.includes(":")) return "kotlin";
+
+    // Ruby
+    if (c.includes("puts ") || (c.includes("def ") && c.includes("end"))) return "ruby";
+
+    // JavaScript
+    if (c.includes("console.log") || c.includes("function") || c.includes("=>")) return "javascript";
+
+    // Python (keep LAST so it doesn't steal others)
+    if (c.includes("print(") || c.includes("def ")) return "python";
 
     return "python";
 }
