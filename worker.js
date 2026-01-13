@@ -1,136 +1,109 @@
 export default {
   async fetch(req, env) {
-    const url = new URL(req.url);
-    const parts = url.pathname.split("/").filter(Boolean);
-
-    const user = parts[0];
-    const filename = parts[1];
-
-    if (!user || !filename) {
-      return new Response("<h2>Missing user or filename.</h2>", {
-        headers: { "Content-Type": "text/html" }
-      });
-    }
-
-    const KEY_PREFIX = `${user}/`;
-
-    async function loadFile(name) {
-      const data = await env.FILES.get(KEY_PREFIX + name);
-      if (!data) throw new Error("Failed to load " + name);
-      return data;
-    }
-
-    let raw;
     try {
-      raw = await loadFile(filename);
-    } catch {
-      return new Response("<h2>File not found.</h2>", { status: 404 });
-    }
+      const url = new URL(req.url);
+      const parts = url.pathname.split("/").filter(Boolean);
 
-    // --------------------------------
-    // EXTRACT HEAD & BODY
-    // --------------------------------
-    const headMatch = raw.match(/<head[^>]*>([\s\S]*?)<\/head>/i);
-    const bodyMatch = raw.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
+      const user = parts[0];
+      const filename = parts[1];
 
-    const headContent = headMatch ? headMatch[1] : "";
-    const bodyContent = bodyMatch ? bodyMatch[1] : raw;
+      if (!user || !filename)
+        return new Response("<h2>Missing user or filename.</h2>", { status: 400 });
 
-    // --------------------------------
-    // REWRITE fetch()
-    // --------------------------------
-    function rewriteFetches(code) {
-      return code.replace(
-        /fetch\(\s*["']([^"']+)["']\s*\)/g,
-        (m, p) => {
-          if (/^(https?:)?\/\//i.test(p) || p.startsWith("/")) return m;
-          return `fetch("/${user}/${p}")`;
+      const PREFIX = `${user}/`;
+
+      async function loadFile(name) {
+        const data = await env.FILES.get(PREFIX + name);
+        if (!data) throw new Error("Missing " + name);
+        return data;
+      }
+
+      let raw = await loadFile(filename);
+
+      const headMatch = raw.match(/<head[^>]*>([\s\S]*?)<\/head>/i);
+      const bodyMatch = raw.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
+
+      const headContent = headMatch ? headMatch[1] : "";
+      const bodyContent = bodyMatch ? bodyMatch[1] : raw;
+
+      function rewriteFetches(code) {
+        return code.replace(
+          /fetch\(\s*["']([^"']+)["']\s*\)/g,
+          (m, p) => {
+            if (/^(https?:)?\/\//i.test(p) || p.startsWith("/")) return m;
+            return `fetch("/${user}/${p}")`;
+          }
+        );
+      }
+
+      // ---------- STYLES ----------
+      let finalHead = "";
+
+      const styleRegex = /<style[^>]*>([\s\S]*?)<\/style>/gi;
+      const linkRegex = /<link[^>]+rel=["']stylesheet["'][^>]*>/gi;
+
+      finalHead += headContent
+        .replace(styleRegex, "")
+        .replace(linkRegex, "")
+        .replace(/<script[\s\S]*?<\/script>/gi, "");
+
+      for (const m of headContent.matchAll(styleRegex)) {
+        finalHead += `<style>${m[1]}</style>`;
+      }
+
+      for (const l of headContent.matchAll(linkRegex)) {
+        const href = l[0].match(/href=["']([^"']+)["']/i)?.[1];
+        if (!href) continue;
+
+        if (/^(https?:)?\/\//i.test(href)) {
+          finalHead += l[0];
+        } else {
+          try {
+            const css = await loadFile(href);
+            finalHead += `<style>${css}</style>`;
+          } catch {}
         }
-      );
-    }
+      }
 
-    // --------------------------------
-    // PROCESS HEAD
-    // --------------------------------
-    let finalHead = "";
+      // ---------- SCRIPTS ----------
+      let finalScripts = "";
 
-    const tempHead = new DOMParser().parseFromString(
-      `<head>${headContent}</head>`,
-      "text/html"
-    ).head;
+      const scriptRegex = /<script([^>]*)>([\s\S]*?)<\/script>/gi;
 
-    for (const node of tempHead.children) {
-      const tag = node.tagName.toLowerCase();
+      for (const m of (headContent + bodyContent).matchAll(scriptRegex)) {
+        const attrs = m[1];
+        const inline = m[2];
 
-      if (tag === "script" || tag === "style") continue;
+        const src = attrs.match(/src=["']([^"']+)["']/i)?.[1];
+        const type = attrs.match(/type=["']([^"']+)["']/i)?.[1];
 
-      finalHead += node.outerHTML;
-    }
+        if (!src) {
+          finalScripts += `<script${type ? ` type="${type}"` : ""}>${rewriteFetches(inline)}</script>`;
+          continue;
+        }
 
-    for (const style of tempHead.querySelectorAll("style")) {
-      finalHead += `<style>${style.textContent}</style>`;
-    }
+        if (/^(https?:)?\/\//i.test(src)) {
+          finalScripts += `<script src="${src}"${type ? ` type="${type}"` : ""}></script>`;
+          continue;
+        }
 
-    for (const link of tempHead.querySelectorAll('link[rel="stylesheet"]')) {
-      const href = link.getAttribute("href");
-
-      if (/^(https?:)?\/\//i.test(href)) {
-        finalHead += link.outerHTML;
-      } else {
         try {
-          const css = await loadFile(href);
-          finalHead += `<style>${css}</style>`;
-        } catch {}
-      }
-    }
+          const js = await loadFile(src);
+          const isModule = type === "module" || /\b(import|export)\b/.test(js);
 
-    // --------------------------------
-    // HANDLE SCRIPTS
-    // --------------------------------
-    const scriptHolder = new DOMParser().parseFromString(
-      `<div>${headContent}${bodyContent}</div>`,
-      "text/html"
-    );
-
-    let finalScripts = "";
-
-    const scripts = [...scriptHolder.querySelectorAll("script")];
-
-    for (const old of scripts) {
-      const src = old.getAttribute("src");
-      const type = old.getAttribute("type") || "text/javascript";
-      const inline = old.textContent || "";
-
-      if (!src) {
-        finalScripts += `<script${type==="module"?' type="module"':""}>${rewriteFetches(inline)}</script>`;
-        continue;
-      }
-
-      if (/^(https?:)?\/\//i.test(src)) {
-        finalScripts += `<script src="${src}"${type==="module"?' type="module"':""}></script>`;
-        continue;
-      }
-
-      try {
-        const js = await loadFile(src);
-        const isModule = type === "module" || /\b(import|export)\b/.test(js);
-
-        if (isModule) {
-          const encoded = btoa(unescape(encodeURIComponent(rewriteFetches(js))));
-          finalScripts += `
+          if (isModule) {
+            const encoded = btoa(unescape(encodeURIComponent(rewriteFetches(js))));
+            finalScripts += `
 <script type="module">
 import(URL.createObjectURL(new Blob([decodeURIComponent(escape(atob("${encoded}")))],{type:"text/javascript"})));
 </script>`;
-        } else {
-          finalScripts += `<script>${rewriteFetches(js)}</script>`;
-        }
-      } catch {}
-    }
+          } else {
+            finalScripts += `<script>${rewriteFetches(js)}</script>`;
+          }
+        } catch {}
+      }
 
-    // --------------------------------
-    // FINAL HTML
-    // --------------------------------
-    const finalHTML = `
+      const finalHTML = `
 <!DOCTYPE html>
 <html>
 <head>
@@ -142,10 +115,12 @@ ${finalScripts}
 </body>
 </html>`;
 
-    return new Response(finalHTML, {
-      headers: {
-        "Content-Type": "text/html; charset=utf-8"
-      }
-    });
+      return new Response(finalHTML, {
+        headers: { "Content-Type": "text/html; charset=utf-8" }
+      });
+
+    } catch (e) {
+      return new Response("Worker crash:\n" + e.stack, { status: 500 });
+    }
   }
 };
