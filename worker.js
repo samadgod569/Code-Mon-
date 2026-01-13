@@ -130,21 +130,29 @@ if (req.method === "POST") {
         headers: corsHeaders
       });
     }
-   if (url.pathname === "/api/pay") {
+
+
+if (path === "/api/pay") {
+
+  // Preflight support
+  if (request.method === "OPTIONS") {
+    return new Response(null, { headers: corsHeaders });
+  }
+
   try {
     const data = await request.json();
     const { key, username, amount } = data;
 
     if (!username || amount === undefined)
-      return new Response(JSON.stringify({ success: false, error: "Missing fields" }), { status: 400 });
+      return new Response(JSON.stringify({ success: false, error: "Missing fields" }), { status: 400, headers: corsHeaders });
 
     const payAmount = parseInt(amount);
     if (isNaN(payAmount) || payAmount <= 0)
-      return new Response(JSON.stringify({ success: false, error: "Invalid amount" }), { status: 400 });
+      return new Response(JSON.stringify({ success: false, error: "Invalid amount" }), { status: 400, headers: corsHeaders });
 
     const realKey = await env.FILES.get("KEY");
     if (key !== realKey)
-      return new Response(JSON.stringify({ success: false, error: "Invalid key" }), { status: 403 });
+      return new Response(JSON.stringify({ success: false, error: "Invalid key" }), { status: 403, headers: corsHeaders });
 
     const current = await env.PAY.get(username);
     const currentBalance = parseInt(current) || 0;
@@ -158,40 +166,15 @@ if (req.method === "POST") {
       user: username,
       paid: payAmount,
       total: newBalance
-    }), { headers: { "Content-Type": "application/json" } });
-
-  } catch (err) {
-    return new Response(JSON.stringify({ success: false, error: err.message }), { status: 500 });
-  }
-   } 
-if (path === "/api/app-list") {
-
-  if (req.method !== "GET") {
-    return new Response("Method Not Allowed", {
-      status: 405,
-      headers: corsHeaders
-    });
-  }
-
-  try {
-    const list = await env.APP.list();
-
-    const keys = list.keys.map(k => k.name);
-
-    return new Response(JSON.stringify({
-      success: true,
-      total: keys.length,
-      apps: keys
     }), {
-      status: 200,
       headers: {
-        ...corsHeaders,
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
+        ...corsHeaders
       }
     });
 
-  } catch (e) {
-    return new Response("Failed to list apps", {
+  } catch (err) {
+    return new Response(JSON.stringify({ success: false, error: err.message }), {
       status: 500,
       headers: corsHeaders
     });
