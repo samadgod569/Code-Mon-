@@ -1,283 +1,151 @@
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type"
-};
-
 export default {
   async fetch(req, env) {
     const url = new URL(req.url);
-    const path = url.pathname;
+    const parts = url.pathname.split("/").filter(Boolean);
 
-    // 🔹 Handle CORS preflight
-    if (req.method === "OPTIONS") {
-      return new Response(null, {
-        status: 204,
-        headers: corsHeaders
+    const user = parts[0];
+    const filename = parts[1];
+
+    if (!user || !filename) {
+      return new Response("<h2>Missing user or filename.</h2>", {
+        headers: { "Content-Type": "text/html" }
       });
     }
 
-    if (path === "/api/engine") {
+    const KEY_PREFIX = `${user}/`;
 
-      // ---------- GET ----------
-      if (req.method === "GET") {
-        const name = url.searchParams.get("username");
+    async function loadFile(name) {
+      const data = await env.FILES.get(KEY_PREFIX + name);
+      if (!data) throw new Error("Failed to load " + name);
+      return data;
+    }
 
-        if (!name) {
-          return new Response("Missing name", {
-            status: 400,
-            headers: corsHeaders
-          });
+    let raw;
+    try {
+      raw = await loadFile(filename);
+    } catch {
+      return new Response("<h2>File not found.</h2>", { status: 404 });
+    }
+
+    // --------------------------------
+    // EXTRACT HEAD & BODY
+    // --------------------------------
+    const headMatch = raw.match(/<head[^>]*>([\s\S]*?)<\/head>/i);
+    const bodyMatch = raw.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
+
+    const headContent = headMatch ? headMatch[1] : "";
+    const bodyContent = bodyMatch ? bodyMatch[1] : raw;
+
+    // --------------------------------
+    // REWRITE fetch()
+    // --------------------------------
+    function rewriteFetches(code) {
+      return code.replace(
+        /fetch\(\s*["']([^"']+)["']\s*\)/g,
+        (m, p) => {
+          if (/^(https?:)?\/\//i.test(p) || p.startsWith("/")) return m;
+          return `fetch("/${user}/${p}")`;
         }
+      );
+    }
 
-        const manifest = await env.APP.get(name);
+    // --------------------------------
+    // PROCESS HEAD
+    // --------------------------------
+    let finalHead = "";
 
-        if (!manifest) {
-          return new Response("Not Found", {
-            status: 404,
-            headers: corsHeaders
-          });
-        }
+    const tempHead = new DOMParser().parseFromString(
+      `<head>${headContent}</head>`,
+      "text/html"
+    ).head;
 
-        return new Response(manifest, {
-          status: 200,
-          headers: {
-            ...corsHeaders,
-            "Content-Type": "application/manifest+json"
-          }
-        });
+    for (const node of tempHead.children) {
+      const tag = node.tagName.toLowerCase();
+
+      if (tag === "script" || tag === "style") continue;
+
+      finalHead += node.outerHTML;
+    }
+
+    for (const style of tempHead.querySelectorAll("style")) {
+      finalHead += `<style>${style.textContent}</style>`;
+    }
+
+    for (const link of tempHead.querySelectorAll('link[rel="stylesheet"]')) {
+      const href = link.getAttribute("href");
+
+      if (/^(https?:)?\/\//i.test(href)) {
+        finalHead += link.outerHTML;
+      } else {
+        try {
+          const css = await loadFile(href);
+          finalHead += `<style>${css}</style>`;
+        } catch {}
+      }
+    }
+
+    // --------------------------------
+    // HANDLE SCRIPTS
+    // --------------------------------
+    const scriptHolder = new DOMParser().parseFromString(
+      `<div>${headContent}${bodyContent}</div>`,
+      "text/html"
+    );
+
+    let finalScripts = "";
+
+    const scripts = [...scriptHolder.querySelectorAll("script")];
+
+    for (const old of scripts) {
+      const src = old.getAttribute("src");
+      const type = old.getAttribute("type") || "text/javascript";
+      const inline = old.textContent || "";
+
+      if (!src) {
+        finalScripts += `<script${type==="module"?' type="module"':""}>${rewriteFetches(inline)}</script>`;
+        continue;
       }
 
-// ---------- POST ----------
-if (req.method === "POST") {
-  let body;
+      if (/^(https?:)?\/\//i.test(src)) {
+        finalScripts += `<script src="${src}"${type==="module"?' type="module"':""}></script>`;
+        continue;
+      }
 
-  try {
-    body = await req.json();
-  } catch {
-    return new Response("Invalid JSON", {
-      status: 400,
-      headers: corsHeaders
-    });
-  }
+      try {
+        const js = await loadFile(src);
+        const isModule = type === "module" || /\b(import|export)\b/.test(js);
 
-  const { name, manifest, username, pass } = body;
-
-  if (!name || !manifest || !username || !pass) {
-    return new Response("Missing fields", {
-      status: 400,
-      headers: corsHeaders
-    });
-  }
-
-  // 🔐 Verify password
-  const storedPass = await env.Pass.get(username);
-
-  if (!storedPass || storedPass !== pass) {
-    return new Response("Unauthorized: Invalid credentials", {
-      status: 401,
-      headers: corsHeaders
-    });
-  }
-
-  const existing = await env.APP.get(username);
-
-  // 🔹 If key exists → check ownership
-  if (existing) {
-  const [owner, storedManifest, description, ...likesArr] = existing.split("*");
-
-  const likes = likesArr.join("*"); // preserves original likes exactly
-
-  if (owner !== username) {
-    return new Response("Forbidden: Not owner", {
-      status: 403,
-      headers: corsHeaders
-    });
-  }
-
-  // Owner matches → update manifest, keep description & likes exactly
-  await env.APP.put(
-    owner,
-    `${owner}*${JSON.stringify(manifest)}*${name || ""}*${likes}`
-  );
-
-  return new Response(JSON.stringify({ success: true, updated: true }), {
-    status: 200,
-    headers: {
-      ...corsHeaders,
-      "Content-Type": "application/json"
-    }
-  });
-  }
-
-  // 🔹 If key does NOT exist → create new
-  await env.APP.put(
-    username,
-    `${username}*${JSON.stringify(manifest)}*${name}*`
-  );
-
-  return new Response(JSON.stringify({ success: true, created: true }), {
-    status: 201,
-    headers: {
-      ...corsHeaders,
-      "Content-Type": "application/json"
-    }
-  });
-}
-
-      return new Response("Method Not Allowed", {
-        status: 405,
-        headers: corsHeaders
-      });
+        if (isModule) {
+          const encoded = btoa(unescape(encodeURIComponent(rewriteFetches(js))));
+          finalScripts += `
+<script type="module">
+import(URL.createObjectURL(new Blob([decodeURIComponent(escape(atob("${encoded}")))],{type:"text/javascript"})));
+</script>`;
+        } else {
+          finalScripts += `<script>${rewriteFetches(js)}</script>`;
+        }
+      } catch {}
     }
 
+    // --------------------------------
+    // FINAL HTML
+    // --------------------------------
+    const finalHTML = `
+<!DOCTYPE html>
+<html>
+<head>
+${finalHead}
+</head>
+<body>
+${bodyContent}
+${finalScripts}
+</body>
+</html>`;
 
-if (path === "/api/pay") {
-
-  // Preflight support
-  if (request.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
-  }
-
-  try {
-    const data = await request.json();
-    const { key, username, amount } = data;
-
-    if (!username || amount === undefined)
-      return new Response(JSON.stringify({ success: false, error: "Missing fields" }), { status: 400, headers: corsHeaders });
-
-    const payAmount = parseInt(amount);
-    if (isNaN(payAmount) || payAmount <= 0)
-      return new Response(JSON.stringify({ success: false, error: "Invalid amount" }), { status: 400, headers: corsHeaders });
-
-    const realKey = await env.FILES.get("KEY");
-    if (key !== realKey)
-      return new Response(JSON.stringify({ success: false, error: "Invalid key" }), { status: 403, headers: corsHeaders });
-
-    const current = await env.PAY.get(username);
-    const currentBalance = parseInt(current) || 0;
-
-    const newBalance = currentBalance + payAmount;
-
-    await env.PAY.put(username, newBalance.toString());
-
-    return new Response(JSON.stringify({
-      success: true,
-      user: username,
-      paid: payAmount,
-      total: newBalance
-    }), {
+    return new Response(finalHTML, {
       headers: {
-        "Content-Type": "application/json",
-        ...corsHeaders
+        "Content-Type": "text/html; charset=utf-8"
       }
-    });
-
-  } catch (err) {
-    return new Response(JSON.stringify({ success: false, error: err.message }), {
-      status: 500,
-      headers: corsHeaders
-    });
-  }
-}
-    if (path === "/api/like") {
-
-  if (req.method !== "POST") {
-    return new Response("Method Not Allowed", {
-      status: 405,
-      headers: corsHeaders
-    });
-  }
-
-  let body;
-  try {
-    body = await req.json();
-  } catch {
-    return new Response("Invalid JSON", {
-      status: 400,
-      headers: corsHeaders
-    });
-  }
-
-  const { username, pass, name } = body;
-
-  if (!username || !pass || !name) {
-    return new Response("Missing fields", {
-      status: 400,
-      headers: corsHeaders
-    });
-  }
-
-  // 🔐 Password check
-  const storedPass = await env.Pass.get(username);
-  if (!storedPass || storedPass !== pass) {
-    return new Response("Unauthorized", {
-      status: 401,
-      headers: corsHeaders
-    });
-  }
-
-  // 🔍 Get app
-  const appValue = await env.APP.get(name);
-  if (!appValue) {
-    return new Response("App Not Found", {
-      status: 404,
-      headers: corsHeaders
-    });
-  }
-
-  // 🧩 SAFE split (VERY IMPORTANT)
-  const parts = appValue.split("*");
-
-  const owner = parts[0];
-  const manifest = parts[1];
-  const description = parts[2];
-  let likes = parts.slice(3).join("*"); // 🛡️ protect against corruption
-
-  // 🧹 Normalize likes
-  let likedUsers = [];
-
-  if (likes && likes.trim() !== "") {
-    likedUsers = likes
-      .split("[*]")
-      .filter(u => u && u.trim() !== "");
-  }
-
-  // 🚫 Already liked?
-  if (likedUsers.includes(username)) {
-    return new Response("Already liked", {
-      status: 409,
-      headers: corsHeaders
-    });
-  }
-
-  // ➕ Add like
-  likedUsers.push(username);
-
-  // 🔁 Rebuild likes string safely
-  likes = likedUsers.map(u => `${u}[*]`).join("");
-
-  // 🔁 Rebuild KV value
-  const updatedValue = `${owner}*${manifest}*${description}*${likes}`;
-
-  await env.APP.put(name, updatedValue);
-
-  return new Response(JSON.stringify({
-    success: true,
-    totalLikes: likedUsers.length,
-    likes
-  }), {
-    status: 200,
-    headers: {
-      ...corsHeaders,
-      "Content-Type": "application/json"
-    }
-  });
-    }
-
-    return new Response("Not Found", {
-      status: 404,
-      headers: corsHeaders
     });
   }
 };
