@@ -23,25 +23,27 @@ export default {
       // RAW FILE MODE (NON HTML)
       // ============================
       if (ext !== "html" && ext !== "htm") {
-        const data = await env.FILES.get(PREFIX + filename);
-        if (!data) return new Response("Not found", { status: 404 });
+  let data = await env.FILES.get(PREFIX + filename, "arrayBuffer");
 
-        const mime = {
-          js: "text/javascript",
-          css: "text/css",
-          json: "application/json",
-          txt: "text/plain",
-          png: "image/png",
-          jpg: "image/jpeg",
-          jpeg: "image/jpeg",
-          svg: "image/svg+xml",
-          webp: "image/webp",
-          wasm: "application/wasm"
-        }[ext] || "application/octet-stream";
+  if (!data) {
+    // fallback to GitHub
+    return fetch("https://raw.githubusercontent.com/YOURUSER/YOURREPO/main/public/" + PREFIX + filename);
+  }
 
-        return new Response(data, {
-          headers: { "Content-Type": mime }
-        });
+  const mime = {
+    js: "text/javascript",
+    css: "text/css",
+    json: "application/json",
+    txt: "text/plain",
+    png: "image/png",
+    jpg: "image/jpeg",
+    jpeg: "image/jpeg",
+    svg: "image/svg+xml",
+    webp: "image/webp",
+    wasm: "application/wasm"
+  }[ext] || "application/octet-stream";
+
+  return new Response(data, { headers: { "Content-Type": mime }});
       }
 
       // ============================
