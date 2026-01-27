@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Login | CodeMon</title>
+
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+    font-family: "Roboto", sans-serif;
+    background: radial-gradient(circle at top, #0f0c29, #302b63, #24243e);
+    height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    color: #fff;
+}
+
+/* Card */
+.container {
+    width: 380px;
+    padding: 30px;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.15);
+    backdrop-filter: blur(12px);
+    border-radius: 15px;
+    box-shadow: 0 0 20px rgba(34,211,238,0.2);
+    animation: fadeIn 0.5s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: scale(0.97); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+h2 {
+    text-align: center;
+    font-family: Orbitron, sans-serif;
+    margin-bottom: 20px;
+    color: #22d3ee;
+    text-shadow: 0 0 10px #22d3ee;
+}
+
+input {
+    width: 100%;
+    padding: 12px;
+    margin: 10px 0 18px;
+    border-radius: 8px;
+    border: 1px solid #22d3ee;
+    background: rgba(255,255,255,0.05);
+    color: #22d3ee;
+    outline: none;
+    font-size: 1rem;
+}
+
+button {
+    width: 100%;
+    padding: 12px;
+    background: #22d3ee;
+    color: #0f0c29;
+    font-family: Orbitron;
+    border-radius: 8px;
+    border: none;
+    cursor: pointer;
+    font-size: 1rem;
+    transition: 0.3s;
+    margin-bottom: 10px;
+}
+
+button:hover {
+    box-shadow: 0 0 20px #22d3ee;
+}
+
+/* Switch text */
+.switch {
+    text-align: center;
+    margin-top: 10px;
+    font-size: 0.85rem;
+}
+
+.switch span {
+    color: #22d3ee;
+    text-decoration: underline;
+    cursor: pointer;
+}
+
+/* Slide-down message */
+#msgBox {
+    position: fixed;
+    top: -100px;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 15px 20px;
+    border-radius: 10px;
+    font-weight: bold;
+    transition: 0.4s;
+    width: 80%;
+    max-width: 450px;
+    text-align: center;
+    z-index: 1000;
+}
+
+.successBox {
+    background: rgba(0,255,0,0.2);
+    border-left: 4px solid lime;
+    color: #baffb8;
+}
+
+.errorBox {
+    background: rgba(255,0,0,0.2);
+    border-left: 4px solid red;
+    color: #ffaaaa;
+}
+</style>
+</head>
+
+<body>
+
+<div id="msgBox"></div>
+
+<div class="container" id="loginCard">
+    <h2 id="title">LOGIN</h2>
+
+    <input type="text" id="loginUser" placeholder="Username">
+    <input type="password" id="loginPass" placeholder="Password">
+
+    <button onclick="login()">Log In</button>
+
+    <div class="switch">
+        Don't have an account? <span onclick="switchToSignup()">Sign Up!</span>
+    </div>
+</div>
+
+<script>
+const API = "https://code-mon.codemon.workers.dev";
+
+/* Message Box */
+function showMsg(msg, success = false) {
+    const box = document.getElementById("msgBox");
+    box.className = success ? "successBox" : "errorBox";
+    box.innerText = msg;
+    box.style.top = "20px";
+
+    setTimeout(() => {
+        box.style.top = "-100px";
+    }, 3500);
+}
+
+/* Switch to Signup */
+function switchToSignup() {
+    document.getElementById("title").innerText = "SIGN UP";
+    document.querySelector("button").innerText = "Create Account";
+    document.querySelector(".switch").innerHTML =
+        `Already have an account? <span onclick="switchToLogin()">Log In!</span>`;
+    document.querySelector("button").setAttribute("onclick", "signup()");
+}
+
+/* Switch to Login */
+function switchToLogin() {
+    document.getElementById("title").innerText = "LOGIN";
+    document.querySelector("button").innerText = "Log In";
+    document.querySelector(".switch").innerHTML =
+        `Don't have an account? <span onclick="switchToSignup()">Sign Up!</span>`;
+    document.querySelector("button").setAttribute("onclick", "login()");
+}
+
+/* LOGIN */
+async function login() {
+    const username = document.getElementById("loginUser").value.trim();
+    const pass = document.getElementById("loginPass").value.trim();
+
+    if (!username || !pass)
+        return showMsg("Please fill in all fields");
+
+    try {
+        const res = await fetch(`${API}/api/pass?username=${username}&pass=${pass}`);
+        const data = await res.json();
+
+        if (!data.success)
+            return showMsg(data.error || "Login failed");
+
+        // Success
+        localStorage.setItem("code-mon-username", username);
+        localStorage.setItem("code-mon-pass", pass);
+        localStorage.setItem("user", username);
+
+        showMsg("Login Successful!", true);
+
+        setTimeout(() => location.href = "index.html", 900);
+
+    } catch (err) {
+        showMsg("Network error");
+    }
+}
+
+/* SIGNUP */
+async function signup() {
+    const username = document.getElementById("loginUser").value.trim();
+    const pass = document.getElementById("loginPass").value.trim();
+
+    if (!username || !pass)
+        return showMsg("Please fill in all fields");
+
+    try {
+        const res = await fetch(`${API}/api/pass-deploy?username=${username}&pass=${pass}`);
+        const data = await res.json();
+
+        if (!data.success)
+            return showMsg(data.error || "Signup failed");
+
+        showMsg("Account created successfully!", true);
+
+        setTimeout(() => switchToLogin(), 1200);
+
+    } catch (err) {
+        showMsg("Network error");
+    }
+}
+</script>
+
+</body>
+</html>
