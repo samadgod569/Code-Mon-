@@ -180,13 +180,13 @@ async function login() {
             return showMsg(data.error || "Login failed");
 
         // Success
-        localStorage.setItem("code-mon-username", username);
-        localStorage.setItem("code-mon-pass", pass);
+        localStorage.setItem("username", username);
+        localStorage.setItem("pass", pass);
         localStorage.setItem("user", username);
 
         showMsg("Login Successful!", true);
 
-        setTimeout(() => location.href = "index.html", 900);
+        setTimeout(() => location.href = "appstore.html", 900);
 
     } catch (err) {
         showMsg("Network error");
