@@ -7,20 +7,16 @@ export default {
     // ===============================
     const parts = url.pathname.split("/").filter(Boolean);
     const user = parts[0];
-    let filename = parts.slice(1).join("/");
+    if (!user) return new Response("Missing user", { status: 400 });
 
-    if (!user) {
-      return new Response("Missing user", { status: 400 });
-    }
+    const rawRelPath = parts.slice(1).join("/") || ""; // <-- ORIGINAL path for .cashing
+    let filename = rawRelPath;
 
-    if (!filename || filename.endsWith("/")) {
-      filename = (filename || "") + "index.html";
-    }
+    if (!filename) filename = "index.html";
+    if (url.pathname.endsWith("/")) filename = filename ? `${filename}index.html` : "index.html";
 
     const last = filename.split("/").pop();
-    if (last && !last.includes(".")) {
-      filename += ".html";
-    }
+    if (last && !last.includes(".")) filename += ".html";
 
     const PREFIX = `${user}/`;
     const ext = filename.split(".").pop().toLowerCase();
@@ -29,10 +25,7 @@ export default {
     // DB LOADER
     // ===============================
     async function loadFile(name, type = "text") {
-      const data = await env.FILES.get(
-        PREFIX + name,
-        type === "arrayBuffer" ? "arrayBuffer" : "text"
-      );
+      const data = await env.FILES.get(PREFIX + name, type === "arrayBuffer" ? "arrayBuffer" : "text");
       if (data == null) throw new Error("Missing " + name);
       return data;
     }
@@ -58,11 +51,8 @@ export default {
 
     async function processHTML(raw) {
       raw ??= "";
-
-      const head =
-        raw.match(/<head[^>]*>([\s\S]*?)<\/head>/i)?.[1] || "";
-      const body =
-        raw.match(/<body[^>]*>([\s\S]*?)<\/body>/i)?.[1] || raw;
+      const head = raw.match(/<head[^>]*>([\s\S]*?)<\/head>/i)?.[1] || "";
+      const body = raw.match(/<body[^>]*>([\s\S]*?)<\/body>/i)?.[1] || raw;
 
       let finalHead = "";
 
@@ -120,7 +110,6 @@ export default {
     async function runCashing(relPath, status) {
       try {
         const code = await loadFile(".cashing");
-
         const fn = new Function(
           "path",
           "status",
@@ -132,7 +121,6 @@ export default {
            const env = undefined;
            ${code}`
         );
-
         const result = fn(relPath, status);
         if (typeof result !== "string") return null;
         return result.replace(/^\/+/, "");
@@ -154,25 +142,17 @@ export default {
         return new Response("Not Found", { status: 404 });
       }
 
-      let mime = {
-          js: "text/javascript",
-          css: "text/css",
-          json: "application/manifest+json",
-          png: "image/png",
-          jpg: "image/jpeg",
-          jpeg: "image/jpeg",
-          svg: "image/svg+xml",
-          wasm: "application/wasm",
-          mp3: "audio/mpeg",
-          wav: "audio/wav",
-          ogg: "audio/ogg",
-          m4a: "audio/mp4",
-          mp4: "video/mp4",
-          webm: "video/webm",
-          mov: "video/quicktime",
-          avi: "video/x-msvideo",
-        }[e] || "application/octet-stream";
-      
+      const mime = {
+        html: "text/html; charset=utf-8",
+        js: "text/javascript",
+        css: "text/css",
+        json: "application/json",
+        png: "image/png",
+        jpg: "image/jpeg",
+        jpeg: "image/jpeg",
+        svg: "image/svg+xml",
+        mp4: "video/mp4",
+      }[e] || "application/octet-stream";
 
       const body = e === "html" ? await processHTML(data) : data;
 
@@ -198,8 +178,8 @@ export default {
         headers: { "Content-Type": "text/html; charset=utf-8" },
       });
     } catch {
-      const rel = filename;
-      const f = await runCashing(rel, 404);
+      // Pass RAW requested path to .cashing, not auto-modified filename
+      const f = await runCashing(rawRelPath, 404);
       if (f) return await serveDynamic(f, 404);
       return new Response("Not Found", { status: 404 });
     }
