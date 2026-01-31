@@ -6,69 +6,26 @@ export default {
       const user = parts[0];
       if (!user) return new Response("Missing user", { status: 400 });
 
-      const rawRelPath = parts.slice(1).join("/") || "";
-      const PREFIX = `${user}/`;
+      const PREFIX = `${user}/`; // e.g., "C69P2W/"
 
       // -----------------------------
-      // KV loader with debug
+      // Load .cashing from KV
       // -----------------------------
-      async function loadFile(name, type = "text") {
-        const key = PREFIX + name;
+      const key = PREFIX + ".cashing";
+      const data = await env.FILES.get(key, "text");
 
-        // DEBUG: list keys under this user prefix
-        const list = await env.FILES.list({ prefix: PREFIX });
-        console.log("KV LIST for user:", list.keys.map(k => k.name));
-
-        const data = await env.FILES.get(key, type === "arrayBuffer" ? "arrayBuffer" : "text");
-        console.log("KV GET:", key, data ? "FOUND" : "MISSING");
-        if (data == null) throw new Error("Missing " + key);
-        return data;
+      if (!data) {
+        return new Response(`.cashing not found at key: ${key}`, { status: 404 });
       }
 
       // -----------------------------
-      // .cashing executor
+      // Return the raw content
       // -----------------------------
-      async function runCashing(relPath, status) {
-        try {
-          const code = await loadFile("index.js"); // Load from KV
-          console.log("CASHING RAW CODE:", code); // log raw code
-          const fn = new Function(
-            "path",
-            "status",
-            `"use strict";
-             const fetch=undefined;
-             const WebSocket=undefined;
-             const Request=undefined;
-             const Response=undefined;
-             const env=undefined;
-             ${code}`
-          );
-          const result = fn(relPath, status);
-          console.log("CASHING RETURNED:", result); // log returned filename
-          if (typeof result !== "string") return null;
-          return result.trim().replace(/^\/+/, "");
-        } catch (e) {
-          console.log("CASHING ERROR:", e);
-          return null;
-        }
-      }
-
-      // -----------------------------
-      // Main test flow
-      // -----------------------------
-      const fallback = await runCashing(rawRelPath, 404);
-
-      return new Response(
-        JSON.stringify({
-          requestedPath: rawRelPath,
-          fallbackReturned: fallback,
-        }, null, 2),
-        {
-          headers: { "Content-Type": "application/json" },
-        }
-      );
+      return new Response(data, {
+        headers: { "Content-Type": "text/plain; charset=utf-8" },
+      });
     } catch (e) {
-      return new Response("Internal Server Error:\n" + e, { status: 500 });
+      return new Response("Error fetching .cashing:\n" + e, { status: 500 });
     }
   }
 };
