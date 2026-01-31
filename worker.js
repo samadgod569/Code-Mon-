@@ -9,25 +9,25 @@ export default {
       const rawRelPath = parts.slice(1).join("/") || "";
       let filename = rawRelPath || "index.html";
       if (url.pathname.endsWith("/")) filename = filename ? `${filename}index.html` : "index.html";
-
       const last = filename.split("/").pop();
       if (last && !last.includes(".")) filename += ".html";
 
       const PREFIX = `${user}/`;
       const ext = filename.split(".").pop().toLowerCase();
 
-      // =========================
-      // KV Loader
-      // =========================
+      // -----------------------------
+      // KV loader
+      // -----------------------------
       async function loadFile(name, type = "text") {
-        const data = await env.FILES.get(PREFIX + name, type === "arrayBuffer" ? "arrayBuffer" : "text");
-        if (data == null) throw new Error("Missing " + name);
+        const key = PREFIX + name;
+        const data = await env.FILES.get(key, type === "arrayBuffer" ? "arrayBuffer" : "text");
+        if (data == null) throw new Error("Missing " + key);
         return data;
       }
 
-      // =========================
+      // -----------------------------
       // HTML helpers
-      // =========================
+      // -----------------------------
       function rewriteFetches(code) {
         if (!code) return code;
         return code.replace(/fetch\(["']([^"']+)["']\)/g, (m, p) => {
@@ -95,9 +95,9 @@ export default {
 </html>`;
       }
 
-      // =========================
+      // -----------------------------
       // .cashing executor
-      // =========================
+      // -----------------------------
       async function runCashing(relPath, status) {
         try {
           const code = await loadFile(".cashing"); // always from user folder
@@ -114,15 +114,15 @@ export default {
           );
           const result = fn(relPath, status);
           if (typeof result !== "string") return null;
-          return result.replace(/^\/+/, ""); // normalize filename
+          return result.trim().replace(/^\/+/, ""); // normalize filename
         } catch {
           return null;
         }
       }
 
-      // =========================
+      // -----------------------------
       // Serve dynamic file
-      // =========================
+      // -----------------------------
       async function serveDynamic(file, status) {
         const e = file.split(".").pop().toLowerCase();
         let data;
@@ -148,26 +148,25 @@ export default {
         return new Response(body, { status, headers: { "Content-Type": mime } });
       }
 
-      // =========================
+      // -----------------------------
       // Main flow
-      // =========================
+      // -----------------------------
       try {
-        if (!["html", "htm"].includes(ext)) {
+        if (!["html","htm"].includes(ext)) {
           const bin = await loadFile(filename, "arrayBuffer");
-          return new Response(bin, { headers: { "Content-Type": "application/octet-stream" } });
+          return new Response(bin, { headers: { "Content-Type":"application/octet-stream" } });
         }
-
         const raw = await loadFile(filename);
-        return new Response(await processHTML(raw), { headers: { "Content-Type": "text/html; charset=utf-8" } });
+        return new Response(await processHTML(raw), { headers: { "Content-Type":"text/html; charset=utf-8" } });
       } catch {
+        // if file not found → fallback to .cashing
         const f = await runCashing(rawRelPath, 404);
         if (f) return await serveDynamic(f, 404);
         return new Response("Not Found", { status: 404 });
       }
 
-    } catch (e) {
-      // fallback for 500 errors
+    } catch {
       return new Response("Internal Server Error", { status: 500 });
     }
-  },
+  }
 };
