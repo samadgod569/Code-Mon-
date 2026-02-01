@@ -5,7 +5,6 @@ export default {
       "Access-Control-Allow-Methods": "GET,HEAD,OPTIONS",
       "Access-Control-Allow-Headers": "*"
     };
-
     const securityHeaders = {
       "X-Content-Type-Options": "nosniff",
       "X-Frame-Options": "DENY",
@@ -13,9 +12,7 @@ export default {
       "Accept-Ranges": "bytes"
     };
 
-    if (req.method === "OPTIONS") {
-      return new Response(null, { headers: cors });
-    }
+    if (req.method === "OPTIONS") return new Response(null, { headers: cors });
 
     try {
       const url = new URL(req.url);
@@ -31,10 +28,7 @@ export default {
       const BASEDIR = filename.split("/").slice(0, -1).join("/");
 
       async function loadFile(name, type = "text") {
-        const v = await env.FILES.get(
-          PREFIX + name,
-          type === "arrayBuffer" ? "arrayBuffer" : "text"
-        );
+        const v = await env.FILES.get(PREFIX + name, type === "arrayBuffer" ? "arrayBuffer" : "text");
         if (v === null) throw new Error("Missing " + name);
         return v;
       }
@@ -55,9 +49,7 @@ export default {
           const rules = JSON.parse(await loadFile(".cache.json"));
           return rules[ext] || rules.default || "no-cache";
         } catch {
-          return ["js","css","png","jpg","jpeg","svg","mp4"].includes(ext)
-            ? "1y"
-            : "no-cache";
+          return ["js","css","png","jpg","jpeg","svg","mp4"].includes(ext) ? "1y" : "no-cache";
         }
       }
 
@@ -68,9 +60,7 @@ export default {
       }
 
       async function makeETag(data) {
-        const buf = typeof data === "string"
-          ? new TextEncoder().encode(data)
-          : new Uint8Array(data);
+        const buf = typeof data === "string" ? new TextEncoder().encode(data) : new Uint8Array(data);
         const hash = await crypto.subtle.digest("SHA-1", buf);
         return `"${[...new Uint8Array(hash)].map(b => b.toString(16).padStart(2,"0")).join("")}"`;
       }
@@ -92,19 +82,14 @@ export default {
       async function processHTML(raw) {
         const head = raw.match(/<head[^>]*>([\s\S]*?)<\/head>/i)?.[1] || "";
         const body = raw.match(/<body[^>]*>([\s\S]*?)<\/body>/i)?.[1] || raw;
-
         let css = "";
         let js = "";
 
-        for (const m of head.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/gi)) {
-          css += `<style>${fixCSS(m[1])}</style>`;
-        }
-
+        for (const m of head.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/gi)) css += `<style>${fixCSS(m[1])}</style>`;
         for (const l of head.matchAll(/<link[^>]+rel=["']stylesheet["'][^>]*>/gi)) {
           const href = l[0].match(/href=["']([^"']+)["']/i)?.[1];
           if (!href) continue;
-          if (/^(https?:)?\/\//.test(href)) css += l[0];
-          else css += `<style>${fixCSS(await loadFile(resolvePath(BASEDIR, href)))}</style>`;
+          css += /^(https?:)?\/\//.test(href) ? l[0] : `<style>${fixCSS(await loadFile(resolvePath(BASEDIR, href)))}</style>`;
         }
 
         const scripts = [...raw.matchAll(/<script([^>]*)>([\s\S]*?)<\/script>/gi)];
@@ -115,35 +100,19 @@ export default {
           else js += `<script>${rewriteFetch(await loadFile(resolvePath(BASEDIR, src)))}</script>`;
         }
 
-        return `<!DOCTYPE html>
-<html>
-<head>${head}${css}</head>
-<body>${body.replace(/<script[\s\S]*?<\/script>/gi,"")}${js}</body>
-</html>`;
+        return `<!DOCTYPE html><html><head>${head}${css}</head><body>${body.replace(/<script[\s\S]*?<\/script>/gi,"")}${js}</body></html>`;
       }
 
-      async function fallback(code) {
-        try {
-          const map = JSON.parse(await loadFile(".cashing"));
-          if (map[code]) return serve(map[code], code);
-          if (code !== 500 && map[500]) return serve(map[500], 500);
-        } catch {}
-        return new Response(code === 404 ? "Not Found" : "Server Error", { status: code });
-      }
-
-      async function serve(name, status = 200) {
+      async function serve(name, status = 200, root = false) {
         const ext = name.split(".").pop().toLowerCase();
         const cache = cacheControl(await getCacheRule(ext));
         const html = ["html","htm"].includes(ext);
-
         const data = html
           ? await processHTML(await loadFile(name))
           : await loadFile(name, "arrayBuffer");
 
         const etag = await makeETag(data);
-        if (req.headers.get("If-None-Match") === etag) {
-          return new Response(null, { status: 304, headers: { ETag: etag } });
-        }
+        if (req.headers.get("If-None-Match") === etag) return new Response(null, { status: 304, headers: { ETag: etag } });
 
         const mime = {
           html:"text/html; charset=utf-8",
@@ -159,14 +128,16 @@ export default {
 
         return new Response(data, {
           status,
-          headers: {
-            ...cors,
-            ...securityHeaders,
-            "Content-Type": mime,
-            "Cache-Control": cache,
-            "ETag": etag
-          }
+          headers: { ...cors, ...securityHeaders, "Content-Type": mime, "Cache-Control": cache, "ETag": etag }
         });
+      }
+
+      async function fallback(code) {
+        let map = {};
+        try { map = JSON.parse(await loadFile(".cashing")); } catch {}
+        if (map[code]) try { return await serve(map[code], code, true); } catch {}
+        if (code !== 500 && map[500]) try { return await serve(map[500], 500, true); } catch {}
+        return new Response(code === 404 ? "Not Found" : "Server Error", { status: code });
       }
 
       return await serve(filename);
