@@ -34,13 +34,11 @@ export default {
 
     class FileNotFound extends Error {}
 
-    /* =========================
-       UTIL
-    ========================= */
     async function makeETag(data) {
-      const buf = typeof data === "string"
-        ? new TextEncoder().encode(data)
-        : new Uint8Array(data);
+      const buf =
+        typeof data === "string"
+          ? new TextEncoder().encode(data)
+          : new Uint8Array(data);
       const hash = await crypto.subtle.digest("SHA-1", buf);
       return `"${[...new Uint8Array(hash)]
         .map(b => b.toString(16).padStart(2, "0"))
@@ -48,15 +46,12 @@ export default {
     }
 
     function cacheControl(ext) {
-      if (["js","css","png","jpg","jpeg","svg","mp4"].includes(ext)) {
+      if (["js", "css", "png", "jpg", "jpeg", "svg", "mp4"].includes(ext)) {
         return "public, max-age=31536000, immutable";
       }
       return "no-cache";
     }
 
-    /* =========================
-       NORMAL KV MODE
-    ========================= */
     async function serveKV() {
       let cashing = null;
       try {
@@ -71,7 +66,6 @@ export default {
       }
 
       const key = `${user}/${finalPath}`;
-
       const data = await env.FILES.get(key, "arrayBuffer");
       if (!data) throw new FileNotFound();
 
@@ -93,35 +87,55 @@ export default {
       });
     }
 
-    /* =========================
-       GITHUB MODE
-    ========================= */
-    
-async function serveGitHub() {
+    async function serveGitHub() {
   const cfgRaw = await env.STORAGE.get(`website/git/${website}`, "text");
-  if (!cfgRaw) {
-    return new Response("Config not found", { status: 404 });
+  if (!cfgRaw) throw new FileNotFound();
+
+  const { url: baseUrl } = JSON.parse(cfgRaw);
+  const base = baseUrl.replace(/\/+$/, "");
+
+  let cashing = null;
+  try {
+    const r = await fetch(`${base}/.cashing`);
+    if (r.ok) cashing = await r.json();
+  } catch {}
+
+  let finalPath = path;
+  if (cashing?.starting_dir) {
+    finalPath = `${cashing.starting_dir}/${finalPath}`;
   }
 
-  const { url } = JSON.parse(cfgRaw);
-  const base = url.replace(/\/+$/, "");
+  const finalUrl = `${base}/${finalPath}`;
 
-  const filePath = path;
+  const res = await fetch(finalUrl, { redirect: "follow" });
 
-  const finalUrl = `${base}/${filePath}`;
+  if (!res.ok) {
+    if (cashing?.[res.status]) {
+      const fb = await fetch(`${base}/${cashing[res.status]}`, { redirect: "follow" });
+      if (fb.ok) return fb;
+    }
+    throw new FileNotFound();
+  }
 
-  const res = await fetch(finalUrl, {
-    redirect: "follow"
-  });
+  const data = await res.arrayBuffer();
+  const ext = finalPath.split(".").pop().toLowerCase();
+  const etag = await makeETag(data);
 
-  return new Response(res.body, {
-    status: res.status,
-    headers: res.headers
+  if (req.headers.get("If-None-Match") === etag) {
+    return new Response(null, { status: 304 });
+  }
+
+  return new Response(data, {
+    headers: {
+      ...cors,
+      ...securityHeaders,
+      "Content-Type": mime(ext),
+      "Cache-Control": cacheControl(ext),
+      "ETag": etag
+    }
   });
 }
-    /* =========================
-       FALLBACK
-    ========================= */
+
     async function fallback(code) {
       try {
         if (isGitHub) {
@@ -150,9 +164,6 @@ async function serveGitHub() {
       });
     }
 
-    /* =========================
-       MAIN
-    ========================= */
     try {
       return isGitHub ? await serveGitHub() : await serveKV();
     } catch (err) {
@@ -162,9 +173,6 @@ async function serveGitHub() {
   }
 };
 
-/* =========================
-   MIME
-========================= */
 function mime(ext) {
   return {
     html: "text/html; charset=utf-8",
@@ -177,4 +185,4 @@ function mime(ext) {
     svg: "image/svg+xml",
     mp4: "video/mp4"
   }[ext] || "application/octet-stream";
-          }
+}
