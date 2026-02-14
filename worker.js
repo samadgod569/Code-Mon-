@@ -87,52 +87,24 @@ export default {
       });
     }
 
-    async function serveGitHub() {
+async function serveGitHub() {
   const cfgRaw = await env.STORAGE.get(`website/git/${website}`, "text");
   if (!cfgRaw) throw new FileNotFound();
 
-  const { url: baseUrl } = JSON.parse(cfgRaw);
-  const base = baseUrl.replace(/\/+$/, "");
-
-  let cashing = null;
-  try {
-    const r = await fetch(`${base}/.cashing`);
-    if (r.ok) cashing = await r.json();
-  } catch {}
-
-  let finalPath = path;
-  if (cashing?.starting_dir) {
-    finalPath = `${cashing.starting_dir}/${finalPath}`;
-  }
-
-  const finalUrl = `${base}/${finalPath}`;
+  const { url } = JSON.parse(cfgRaw);
+  const base = url.replace(/\/+$/, "");
+  const finalUrl = `${base}/${path}`;
 
   const res = await fetch(finalUrl, { redirect: "follow" });
 
-  if (!res.ok) {
-    if (cashing?.[res.status]) {
-      const fb = await fetch(`${base}/${cashing[res.status]}`, { redirect: "follow" });
-      if (fb.ok) return fb;
-    }
-    throw new FileNotFound();
-  }
+  if (!res.ok) throw new FileNotFound();
 
-  const data = await res.arrayBuffer();
-  const ext = finalPath.split(".").pop().toLowerCase();
-  const etag = await makeETag(data);
+  const headers = new Headers(res.headers);
+  headers.set("Access-Control-Allow-Origin", "*");
 
-  if (req.headers.get("If-None-Match") === etag) {
-    return new Response(null, { status: 304 });
-  }
-
-  return new Response(data, {
-    headers: {
-      ...cors,
-      ...securityHeaders,
-      "Content-Type": mime(ext),
-      "Cache-Control": cacheControl(ext),
-      "ETag": etag
-    }
+  return new Response(res.body, {
+    status: res.status,
+    headers
   });
 }
 
