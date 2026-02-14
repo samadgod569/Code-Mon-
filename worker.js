@@ -96,44 +96,66 @@ export default {
     /* =========================
        GITHUB MODE
     ========================= */
-    async function serveGitHub() {
+    
+async function serveGitHub() {
   const cfgRaw = await env.STORAGE.get(`website/git/${website}`, "text");
   if (!cfgRaw) throw new FileNotFound();
 
   const cfg = JSON.parse(cfgRaw);
   const base = cfg.url.replace(/\/+$/, "");
 
+  /* =========================
+     PATH NORMALIZATION (CRITICAL)
+  ========================= */
   let filePath = path || "";
-  if (filePath.endsWith("/")) filePath += "index.html";
 
-  // try loading .cashing (optional)
+  // 🔑 FORCE index.html
+  if (filePath === "" || filePath === "/") {
+    filePath = "index.html";
+  }
+
+  if (filePath.endsWith("/")) {
+    filePath += "index.html";
+  }
+
+  if (!filePath.split("/").pop().includes(".")) {
+    filePath += ".html";
+  }
+
+  /* =========================
+     LOAD .cashing (OPTIONAL)
+  ========================= */
   let cashing = null;
   try {
-    const r = await fetch(`${base}/.cashing`);
+    const r = await fetch(`${base}/.cashing`, { redirect: "follow" });
     if (r.ok) cashing = await r.json();
   } catch {}
 
   if (cashing?.starting_dir) {
-    filePath = `${cashing.starting_dir}/${filePath}`;
+    filePath = `${cashing.starting_dir.replace(/\/+$/, "")}/${filePath}`;
   }
 
-  const finalUrl = filePath
-    ? `${base}/${filePath}`
-    : `${base}/`;
+  const finalUrl = `${base}/${filePath}`;
 
-  const res = await fetch(finalUrl, { redirect: "follow" });
+  /* =========================
+     FETCH FILE
+  ========================= */
+  const res = await fetch(finalUrl, {
+    redirect: "follow",
+    headers: { "User-Agent": "CodeMon-Worker" }
+  });
 
-  // 🔑 IMPORTANT CHANGE
-  // Do NOT throw on empty body
   if (!res.ok) {
+    // optional fallback from .cashing
     if (cashing?.[res.status]) {
-      return fetch(`${base}/${cashing[res.status]}`);
+      const fb = await fetch(`${base}/${cashing[res.status]}`);
+      if (fb.ok) return fb;
     }
-    return new Response("Not Found", { status: 404 });
+    throw new FileNotFound();
   }
 
-  const data = await res.arrayBuffer(); // may be empty — OK
-  const ext = filePath.split(".").pop()?.toLowerCase() || "html";
+  const data = await res.arrayBuffer();
+  const ext = filePath.split(".").pop().toLowerCase();
   const etag = await makeETag(data);
 
   if (req.headers.get("If-None-Match") === etag) {
@@ -149,8 +171,7 @@ export default {
       "ETag": etag
     }
   });
-    }
-
+                                    }
     /* =========================
        FALLBACK
     ========================= */
