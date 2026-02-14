@@ -106,10 +106,7 @@ async function serveGitHub() {
   const { url } = JSON.parse(cfgRaw);
   const base = url.replace(/\/+$/, "");
 
-  let filePath = path || "";
-  if (!filePath || filePath.endsWith("/")) {
-    filePath += "index.html";
-  }
+  
 
   const finalUrl = `${base}/${filePath}`;
 
