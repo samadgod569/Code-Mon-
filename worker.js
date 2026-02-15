@@ -113,12 +113,10 @@ export default {
 
     // Helper: fallback error pages using .cashing map
     async function fallback(code, config = null) {
-      // If config not provided, try to load it
       if (!config) {
         config = await loadConfig(user, ".cashing");
       }
       if (config && config[code]) {
-        // If starting_dir is set, prepend it to error page path
         const baseDir = config.starting_dir ? `${config.starting_dir}/` : "";
         try {
           return await serveFile(`${user}/${baseDir}${config[code]}`, code);
@@ -131,11 +129,10 @@ export default {
 
     // ========== GITHUB MODE (e- subdomain) ==========
     if (user.startsWith("e-")) {
-      const website = user.slice(2); // remove "e-"
-      // Look up GitHub info from STORAGE KV
+      const website = user.slice(2);
       let gitInfo;
       try {
-        const gitData = await env.STORAGE.get(`website/git/${website}`, "text");
+        const gitData = await env.STORAGE.get(`${website}/git/${website}`, "text");
         gitInfo = JSON.parse(gitData);
       } catch {
         return new Response("GitHub site not configured", { status: 404 });
@@ -143,7 +140,7 @@ export default {
       if (!gitInfo || !gitInfo.url) {
         return new Response("Invalid GitHub configuration", { status: 500 });
       }
-      const baseUrl = gitInfo.url.replace(/\/$/, ""); // remove trailing slash
+      const baseUrl = gitInfo.url.replace(/\/$/, "");
 
       // Fetch .cashing from the GitHub repo
       let cashingConfig = null;
@@ -153,24 +150,29 @@ export default {
           cashingConfig = await cashingRes.json();
         }
       } catch {
-        // ignore, proceed without .cashing
+        // ignore
       }
 
       // Determine actual file path with starting_dir
       let filePath = path;
       if (cashingConfig && cashingConfig.starting_dir) {
-        filePath = `${cashingConfig.starting_dir}/${path}`;
+        // Avoid double prefix if path already contains starting_dir
+        if (!path.startsWith(cashingConfig.starting_dir + '/')) {
+          filePath = `${cashingConfig.starting_dir}/${path}`;
+        }
       }
 
       // Fetch the file from GitHub
       const fileRes = await fetch(`${baseUrl}/${filePath}`);
       if (!fileRes.ok) {
-        // Try custom error page from .cashing map
+        // Try custom error page from .cashing map (also apply starting_dir)
         if (cashingConfig && cashingConfig[fileRes.status]) {
-          const errorPath = cashingConfig[fileRes.status];
+          let errorPath = cashingConfig[fileRes.status];
+          if (cashingConfig.starting_dir && !errorPath.startsWith(cashingConfig.starting_dir + '/')) {
+            errorPath = `${cashingConfig.starting_dir}/${errorPath}`;
+          }
           const errorRes = await fetch(`${baseUrl}/${errorPath}`);
           if (errorRes.ok) {
-            // Serve error page with original status code
             const data = await errorRes.arrayBuffer();
             const etag = await makeETag(data);
             const ext = errorPath.split(".").pop().toLowerCase();
@@ -192,17 +194,16 @@ export default {
                 ...cors,
                 ...securityHeaders,
                 "Content-Type": mime,
-                "Cache-Control": "no-cache", // error pages shouldn't be cached long
+                "Cache-Control": "no-cache",
                 "ETag": etag
               }
             });
           }
         }
-        // Otherwise return the original error
         return new Response(fileRes.statusText, { status: fileRes.status });
       }
 
-      // Success: return file with proper headers
+      // Success: return file
       const data = await fileRes.arrayBuffer();
       const etag = await makeETag(data);
       const ext = filePath.split(".").pop().toLowerCase();
@@ -218,10 +219,8 @@ export default {
         mp4: "video/mp4"
       }[ext] || "application/octet-stream";
 
-      // Determine cache rule (from .cashing or default)
       let cacheRule = "no-cache";
       if (cashingConfig && cashingConfig.cache) {
-        // If .cashing has a cache rule for extensions, use it
         cacheRule = cashingConfig.cache[ext] || cashingConfig.cache.default || "no-cache";
       } else {
         cacheRule = ["js","css","png","jpg","jpeg","svg","mp4"].includes(ext) ? "1y" : "no-cache";
@@ -240,16 +239,11 @@ export default {
     }
 
     // ========== NORMAL MODE ==========
-    // Load .cashing config once
     const cashingConfig = await loadConfig(user, ".cashing");
-
-    // Determine base directory (starting_dir)
     let baseDir = "";
     if (cashingConfig && cashingConfig.starting_dir) {
       baseDir = `${cashingConfig.starting_dir}/`;
     }
-
-    // Construct full KV key
     const key = `${user}/${baseDir}${path}`;
 
     try {
