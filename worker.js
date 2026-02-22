@@ -18,12 +18,33 @@ export default {
     }
 
     const url = new URL(req.url);
-    const hostParts = url.hostname.split(".");
-    const user = hostParts[0];
 
-    if (!user || user === "www") {
-      return new Response("Invalid user", { status: 400 });
-    }
+    const hostname = url.hostname.toLowerCase();
+
+// remove port if any (safety)
+const host = hostname.split(":")[0];
+
+let user = null;
+
+// Case 1: *.code-mon-space.shop
+if (host.endsWith(".code-mon-space.shop")) {
+  user = host.replace(".code-mon-space.shop", "").split(".")[0];
+}
+
+// Case 2: custom domain
+else {
+  const domainConfig = await env.STORAGE.get(`domain/v/${host}`, "text");
+  if (domainConfig) {
+    try {
+      const parsed = JSON.parse(domainConfig);
+      user = parsed.target; // username
+    } catch {}
+  }
+}
+
+if (!user || user === "www") {
+  return new Response("Invalid site", { status: 404 });
+}
 
     // Normalize path
     let path = url.pathname.replace(/^\/+/, "");
