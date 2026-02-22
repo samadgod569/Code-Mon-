@@ -37,7 +37,9 @@ else {
   if (domainConfig) {
     try {
       const parsed = JSON.parse(domainConfig);
-      user = parsed.target; // username
+      user = parsed.target
+  .replace(".code-mon-space.shop", "")
+  .split(".")[0];
     } catch {}
   }
 }
