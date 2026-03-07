@@ -18,58 +18,30 @@ export default {
     }
 
     const url = new URL(req.url);
-
     const hostname = url.hostname.toLowerCase();
+    const host = hostname.split(":")[0];
 
-const host = hostname.split(":")[0];
+    let user = null;
 
-let user = null;
+    if (host.endsWith(".code-mon-space.shop")) {
+      user = host.replace(".code-mon-space.shop", "").split(".")[0];
+    } else {
+      const domainConfig = await env.STORAGE.get(`domain/v/${host}`, "text");
+      if (domainConfig) {
+        try {
+          const parsed = JSON.parse(domainConfig);
+          user = parsed.target.replace(".code-mon-space.shop", "").split(".")[0];
+        } catch {}
+      }
+    }
 
-if (host.endsWith(".code-mon-space.shop")) {
-  user = host.replace(".code-mon-space.shop", "").split(".")[0];
-}
-
-else {
-  const domainConfig = await env.STORAGE.get(`domain/v/${host}`, "text");
-  if (domainConfig) {
-    try {
-      const parsed = JSON.parse(domainConfig);
-      user = parsed.target
-  .replace(".code-mon-space.shop", "")
-  .split(".")[0];
-    } catch {}
-  }
-}
-
-if (!user || user === "www") {
-  return new Response("Invalid site", { status: 404 });
-}
+    if (!user || user === "www") {
+      return new Response("Invalid site", { status: 404 });
+    }
 
     let path = url.pathname.replace(/^\/+/, "");
     if (!path || path.endsWith("/")) path += "index.html";
     if (!path.split("/").pop().includes(".")) path += ".html";
-
-    if (path.startsWith(".codemon/api/") && path.endsWith(".js")) {
-      const kvKey = `${user}/${path}`;
-      const code = await env.FILES.get(kvKey, "text");
-      if (code === null) {
-        return new Response("Not Found", { status: 404, headers: cors });
-      }
-      const mimeType = (await req.text().catch(() => "")).trim() || "text/plain";
-      const res = await fetch("http://ge-02.vortexa.cloud:11012/execute", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ code })
-      });
-      const json = await res.json();
-      return new Response(json.output, {
-        status: 200,
-        headers: {
-          ...cors,
-          "Content-Type": mimeType
-        }
-      });
-    }
 
     class FileNotFound extends Error {
       constructor() {
@@ -115,6 +87,62 @@ if (!user || user === "www") {
 
     async function serveFile(key, status = 200, customCacheRule = null) {
       const ext = key.split(".").pop().toLowerCase();
+
+      if (ext === "js") {
+        const fileText = await env.FILES.get(key, "text");
+        if (fileText === null) throw new FileNotFound();
+
+        if (fileText.startsWith("#$$")) {
+          const apiRef = fileText.trim();
+          const code = await env.API.get(`${user}/${apiRef}`, "text");
+          if (code === null) {
+            return new Response("API Not Found", { status: 404, headers: cors });
+          }
+
+          const contentType = req.headers.get("Content-Type") || "";
+          let mimeType = "text/plain";
+          let bodyToSend;
+
+          if (contentType.includes("application/json")) {
+            const userBody = await req.json().catch(() => null);
+            mimeType = (userBody && userBody.mime) || "text/plain";
+            bodyToSend = JSON.stringify({ code, ...(userBody ? { input: userBody } : {}) });
+          } else {
+            const rawBody = await req.text().catch(() => "");
+            mimeType = rawBody.trim() || "text/plain";
+            bodyToSend = JSON.stringify({ code });
+          }
+
+          const res = await fetch("http://ge-02.vortexa.cloud:11012/execute", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: bodyToSend
+          });
+          const json = await res.json();
+          return new Response(json.output, {
+            status: 200,
+            headers: { ...cors, "Content-Type": mimeType }
+          });
+        }
+
+        const data = new TextEncoder().encode(fileText).buffer;
+        const cache = customCacheRule ? cacheControl(customCacheRule) : cacheControl(await getCacheRule(user, ext));
+        const etag = await makeETag(data);
+        if (req.headers.get("If-None-Match") === etag) {
+          return new Response(null, { status: 304 });
+        }
+        return new Response(data, {
+          status,
+          headers: {
+            ...cors,
+            ...securityHeaders,
+            "Content-Type": "text/javascript",
+            "Cache-Control": cache,
+            "ETag": etag
+          }
+        });
+      }
+
       const cache = customCacheRule ? cacheControl(customCacheRule) : cacheControl(await getCacheRule(user, ext));
       const data = await loadFile(key);
       const etag = await makeETag(data);
@@ -155,8 +183,7 @@ if (!user || user === "www") {
         const baseDir = config.starting_dir ? `${config.starting_dir}/` : "";
         try {
           return await serveFile(`${user}/${baseDir}${config[code]}`, code);
-        } catch {
-        }
+        } catch {}
       }
       return new Response(code === 404 ? "Not Found" : "Server Error", { status: code });
     }
@@ -212,9 +239,8 @@ if (!user || user === "www") {
               svg: "image/svg+xml",
               mp4: "video/mp4"
             }[ext] || "application/octet-stream";
-
             return new Response(data, {
-              status: status,
+              status,
               headers: {
                 ...cors,
                 ...securityHeaders,
