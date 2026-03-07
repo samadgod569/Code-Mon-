@@ -2,8 +2,8 @@ export default {
   async fetch(req, env) {
     const cors = {
       "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Methods": "GET,HEAD,OPTIONS",
-      "Access-Control-Allow-Headers": ""
+      "Access-Control-Allow-Methods": "GET,HEAD,OPTIONS,POST",
+      "Access-Control-Allow-Headers": "Content-Type"
     };
 
     const securityHeaders = {
@@ -21,17 +21,14 @@ export default {
 
     const hostname = url.hostname.toLowerCase();
 
-// remove port if any (safety)
 const host = hostname.split(":")[0];
 
 let user = null;
 
-// Case 1: *.code-mon-space.shop
 if (host.endsWith(".code-mon-space.shop")) {
   user = host.replace(".code-mon-space.shop", "").split(".")[0];
 }
 
-// Case 2: custom domain
 else {
   const domainConfig = await env.STORAGE.get(`domain/v/${host}`, "text");
   if (domainConfig) {
@@ -48,12 +45,32 @@ if (!user || user === "www") {
   return new Response("Invalid site", { status: 404 });
 }
 
-    // Normalize path
     let path = url.pathname.replace(/^\/+/, "");
     if (!path || path.endsWith("/")) path += "index.html";
     if (!path.split("/").pop().includes(".")) path += ".html";
 
-    // Custom error class
+    if (path.startsWith(".codemon/api/") && path.endsWith(".js")) {
+      const kvKey = `${user}/${path}`;
+      const code = await env.FILES.get(kvKey, "text");
+      if (code === null) {
+        return new Response("Not Found", { status: 404, headers: cors });
+      }
+      const mimeType = (await req.text().catch(() => "")).trim() || "text/plain";
+      const res = await fetch("http://ge-02.vortexa.cloud:11012/execute", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code })
+      });
+      const json = await res.json();
+      return new Response(json.output, {
+        status: 200,
+        headers: {
+          ...cors,
+          "Content-Type": mimeType
+        }
+      });
+    }
+
     class FileNotFound extends Error {
       constructor() {
         super("File not found");
@@ -61,14 +78,12 @@ if (!user || user === "www") {
       }
     }
 
-    // Helper: load file from KV with error handling
     async function loadFile(name, type = "arrayBuffer") {
       const file = await env.FILES.get(name, type);
       if (file === null) throw new FileNotFound();
       return file;
     }
 
-    // Helper: load JSON config from KV (returns null if missing/invalid)
     async function loadConfig(user, file) {
       try {
         return JSON.parse(await env.FILES.get(`${user}/${file}`, "text"));
@@ -77,7 +92,6 @@ if (!user || user === "www") {
       }
     }
 
-    // Helper: get cache rule from .cache.json
     async function getCacheRule(user, ext) {
       try {
         const rules = JSON.parse(await loadFile(`${user}/.cache.json`, "text"));
@@ -99,7 +113,6 @@ if (!user || user === "www") {
       return `"${[...new Uint8Array(hash)].map(b => b.toString(16).padStart(2, "0")).join("")}"`;
     }
 
-    // Helper: serve a file from KV with proper headers
     async function serveFile(key, status = 200, customCacheRule = null) {
       const ext = key.split(".").pop().toLowerCase();
       const cache = customCacheRule ? cacheControl(customCacheRule) : cacheControl(await getCacheRule(user, ext));
@@ -134,7 +147,6 @@ if (!user || user === "www") {
       });
     }
 
-    // Helper: fallback error pages using .cashing map
     async function fallback(code, config = null) {
       if (!config) {
         config = await loadConfig(user, ".cashing");
@@ -144,13 +156,11 @@ if (!user || user === "www") {
         try {
           return await serveFile(`${user}/${baseDir}${config[code]}`, code);
         } catch {
-          // fall through to default
         }
       }
       return new Response(code === 404 ? "Not Found" : "Server Error", { status: code });
     }
 
-    // ========== GITHUB MODE (e- subdomain) ==========
     if (user.startsWith("e-")) {
       const website = user.slice(2);
       let gitInfo;
@@ -165,27 +175,21 @@ if (!user || user === "www") {
       }
       const baseUrl = gitInfo.url.replace(/\/$/, "");
 
-      // Extract configuration from gitInfo
       const startingDir = gitInfo.starting_dir || "";
       const errorPages = {
         404: gitInfo["404"],
         500: gitInfo["500"]
-        // Add more status codes as needed
       };
 
-      // Determine actual file path with starting_dir
       let filePath = path;
       if (startingDir) {
-        // Avoid double prefix if path already contains starting_dir
         if (!path.startsWith(startingDir + '/')) {
           filePath = `${startingDir}/${path}`;
         }
       }
 
-      // Fetch the file from GitHub
       const fileRes = await fetch(`${baseUrl}/${filePath}?nocash=1`);
       if (!fileRes.ok) {
-        // Try custom error page from gitInfo map (also apply starting_dir)
         const status = fileRes.status;
         if (errorPages[status]) {
           let errorPath = errorPages[status];
@@ -224,7 +228,6 @@ if (!user || user === "www") {
         return new Response(fileRes.statusText, { status: fileRes.status });
       }
 
-      // Success: return file
       const data = await fileRes.arrayBuffer();
       const etag = await makeETag(data);
       const ext = filePath.split(".").pop().toLowerCase();
@@ -240,7 +243,6 @@ if (!user || user === "www") {
         mp4: "video/mp4"
       }[ext] || "application/octet-stream";
 
-      // Cache rule based on extension (default)
       const cacheRule = ["js","css","png","jpg","jpeg","svg","mp4"].includes(ext) ? "1y" : "no-cache";
 
       return new Response(data, {
@@ -255,7 +257,6 @@ if (!user || user === "www") {
       });
     }
 
-    // ========== NORMAL MODE ==========
     const cashingConfig = await loadConfig(user, ".cashing");
     let baseDir = "";
     if (cashingConfig && cashingConfig.starting_dir) {
