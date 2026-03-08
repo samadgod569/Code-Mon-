@@ -69,7 +69,7 @@ export default {
         const rules = JSON.parse(await loadFile(`${user}/.cache.json`, "text"));
         return rules[ext] || rules.default || "no-cache";
       } catch {
-        return ["js", "css", "png", "jpg", "jpeg", "svg", "mp4"].includes(ext) ? "1y" : "no-cache";
+        return ["js","css","png","jpg","jpeg","svg","mp4"].includes(ext) ? "1y" : "no-cache";
       }
     }
 
@@ -99,38 +99,55 @@ export default {
             return new Response("API Not Found", { status: 404, headers: cors });
           }
 
+          let input = null;
           const contentType = req.headers.get("Content-Type") || "";
-          let mimeType = "text/plain";
-          let bodyToSend;
 
           if (contentType.includes("application/json")) {
-            const userBody = await req.json().catch(() => null);
-            mimeType = (userBody && userBody.mime) || "text/plain";
-            bodyToSend = JSON.stringify({ code, ...(userBody ? { input: userBody } : {}) });
+            input = await req.json().catch(() => null);
           } else {
-            const rawBody = await req.text().catch(() => "");
-            mimeType = rawBody.trim() || "text/plain";
-            bodyToSend = JSON.stringify({ code });
+            const txt = await req.text().catch(() => "");
+            if (txt) input = txt;
           }
 
-          const res = await fetch("http://ge-02.vortexa.cloud:11012/execute", {
+          const context = {
+            method: req.method,
+            url: req.url,
+            headers: Object.fromEntries(req.headers),
+            ip: req.headers.get("cf-connecting-ip"),
+            geo: req.cf,
+            query: Object.fromEntries(url.searchParams),
+            body: input
+          };
+
+          const execRes = await fetch("http://ge-02.vortexa.cloud:11012/execute", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: bodyToSend
+            body: JSON.stringify({ code, context })
           });
-          const json = await res.json();
-          return new Response(json.output, {
-            status: 200,
-            headers: { ...cors, "Content-Type": mimeType }
-          });
+
+          const json = await execRes.json();
+
+          const statusCode = json?.response?.status || 200;
+          const body = json?.response?.body ?? json.output ?? "";
+          const mime = typeof body === "object" ? "application/json" : "text/plain";
+
+          return new Response(
+            typeof body === "object" ? JSON.stringify(body) : body,
+            {
+              status: statusCode,
+              headers: { ...cors, "Content-Type": mime }
+            }
+          );
         }
 
         const data = new TextEncoder().encode(fileText).buffer;
         const cache = customCacheRule ? cacheControl(customCacheRule) : cacheControl(await getCacheRule(user, ext));
         const etag = await makeETag(data);
+
         if (req.headers.get("If-None-Match") === etag) {
           return new Response(null, { status: 304 });
         }
+
         return new Response(data, {
           status,
           headers: {
@@ -179,55 +196,67 @@ export default {
       if (!config) {
         config = await loadConfig(user, ".cashing");
       }
+
       if (config && config[code]) {
         const baseDir = config.starting_dir ? `${config.starting_dir}/` : "";
         try {
           return await serveFile(`${user}/${baseDir}${config[code]}`, code);
         } catch {}
       }
+
       return new Response(code === 404 ? "Not Found" : "Server Error", { status: code });
     }
 
     if (user.startsWith("e-")) {
       const website = user.slice(2);
       let gitInfo;
+
       try {
         const gitData = await env.STORAGE.get(`website/git/${website}`, "text");
         gitInfo = JSON.parse(gitData);
       } catch {
         return new Response("GitHub site not configured", { status: 404 });
       }
+
       if (!gitInfo || !gitInfo.url) {
         return new Response("Invalid GitHub configuration", { status: 500 });
       }
-      const baseUrl = gitInfo.url.replace(/\/$/, "");
 
+      const baseUrl = gitInfo.url.replace(/\/$/, "");
       const startingDir = gitInfo.starting_dir || "";
+
       const errorPages = {
         404: gitInfo["404"],
         500: gitInfo["500"]
       };
 
       let filePath = path;
+
       if (startingDir) {
-        if (!path.startsWith(startingDir + '/')) {
+        if (!path.startsWith(startingDir + "/")) {
           filePath = `${startingDir}/${path}`;
         }
       }
 
       const fileRes = await fetch(`${baseUrl}/${filePath}?nocash=1`);
+
       if (!fileRes.ok) {
         const status = fileRes.status;
+
         if (errorPages[status]) {
           let errorPath = errorPages[status];
-          if (startingDir && !errorPath.startsWith(startingDir + '/')) {
+
+          if (startingDir && !errorPath.startsWith(startingDir + "/")) {
             errorPath = `${startingDir}/${errorPath}`;
           }
+
           const errorRes = await fetch(`${baseUrl}/${errorPath}`);
+
           if (errorRes.ok) {
             const data = await errorRes.arrayBuffer();
             const etag = await makeETag(data);
             const ext = errorPath.split(".").pop().toLowerCase();
+
             const mime = {
               html: "text/html; charset=utf-8",
               js: "text/javascript",
@@ -239,6 +268,7 @@ export default {
               svg: "image/svg+xml",
               mp4: "video/mp4"
             }[ext] || "application/octet-stream";
+
             return new Response(data, {
               status,
               headers: {
@@ -251,12 +281,14 @@ export default {
             });
           }
         }
+
         return new Response(fileRes.statusText, { status: fileRes.status });
       }
 
       const data = await fileRes.arrayBuffer();
       const etag = await makeETag(data);
       const ext = filePath.split(".").pop().toLowerCase();
+
       const mime = {
         html: "text/html; charset=utf-8",
         js: "text/javascript",
@@ -284,10 +316,12 @@ export default {
     }
 
     const cashingConfig = await loadConfig(user, ".cashing");
+
     let baseDir = "";
     if (cashingConfig && cashingConfig.starting_dir) {
       baseDir = `${cashingConfig.starting_dir}/`;
     }
+
     const key = `${user}/${baseDir}${path}`;
 
     try {
