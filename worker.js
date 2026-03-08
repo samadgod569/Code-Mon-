@@ -128,24 +128,19 @@ export default {
           const json = await execRes.json();
 
           const statusCode = json?.response?.status || 200;
-const body = json?.response?.body ?? json.output ?? "";
+          const body = json?.response?.body ?? json.output ?? "";
 
-let headers = { ...cors };
+          let headers = { ...cors };
+          if (json?.response?.headers) {
+            headers = { ...headers, ...json.response.headers };
+          }
+          if (!headers["Content-Type"]) {
+            headers["Content-Type"] = typeof body === "object" ? "application/json" : "text/plain";
+          }
 
-if (json?.response?.headers) {
-  headers = { ...headers, ...json.response.headers };
-}
-
-if (!headers["Content-Type"]) {
-  headers["Content-Type"] =
-    typeof body === "object" ? "application/json" : "text/plain";
-}
           return new Response(
             typeof body === "object" ? JSON.stringify(body) : body,
-            {
-              status: statusCode,
-              headers: { ...cors, "Content-Type": mime }
-            }
+            { status: statusCode, headers }
           );
         }
 
